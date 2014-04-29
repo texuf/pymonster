@@ -113,10 +113,10 @@ class EventBase(EventManager):
         consumed_by = 'consumedBy.%s' % consumer_name
         return db[self.collection_name].find_and_modify(
                                             query={
-                                                consumed_by:{'$ne':True}
+                                                consumed_by:None
                                             }
                                             , update={
-                                                '$set':{consumed_by:True}
+                                                '$set':{consumed_by:datetime.now()}
                                             }
                                             , upsert=False
                                             , new=False
