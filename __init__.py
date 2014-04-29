@@ -11,15 +11,14 @@ class Event(EventBase):
 #Consumer Example
 from pymonster import ConsumerBase
 class Consumer(ConsumerBase):
-    def consume(self, event_instance, event_cursor):
-        for event_dict in event_cursor:
-            print '[Custom Consumer :)][%s]: %s' % (self.collection_name, str(event_dict['msg'])) 
+    def consume(self, event_instance, event_data):
+        print '[Custom Consumer :)][%s]: %s' % (self.collection_name, str(event_data['msg'])) 
 '''
 
 #constants
 COUNTER_COLLECTION_NAME = 'event_counters'
 CONSUMER_COLLECTION_NAME = 'event_consumers'
-CONSUMER_ID_BASE = 'consumers'
+CONSUMER_ID_BASE = 'consumer'
 CONSUMER_CUSTOM_CLASS_NAME = 'Consumer'
 EVENT_COLLECTION_NAME_BASE = 'events'
 EVENT_CUSTOM_CLASS_NAME = 'Event'
@@ -62,7 +61,7 @@ class PkgExplorer(object):
     ''' finds your packages by dot notation, instanciates instance of target_class_name and returns it. target class should inherit from PkgExplorer '''
     def __init__(self, pkg_name, collection_name, target_class_name, target_base_class):
         assert pkg_name is not None, 'Specifiy a package as a source of your events'
-        assert collection_name is not None, 'Specifiy a base name for your event collectinos, i.e. "events"'
+        assert collection_name is not None, 'Specifiy a base name for your event collectinos, i.e. "events" or "consumer"'
         self.collection_name = collection_name
         self.pkg_name = pkg_name
         self.target_class_name = target_class_name
@@ -104,22 +103,25 @@ class EventBase(EventManager):
         if verbose: print '[Event][%s] %s' % (self.collection_name,msg)
         db[self.collection_name].insert(
                 {
-                    '_id':counter.get_next(self.collection_name),
-                    'createdAt':datetime.now(),
-                    'msg':msg,
+                    '_id':counter.get_next(self.collection_name)
+                    , 'createdAt':datetime.now()
+                    , 'msg':msg
+                    , 'consumedBy':{}
                 }
             )
-
-    def find_one(self):
-        return db[self.collection_name].find_one( {}, sort=[('_id',-1)] )
-
-    def find_range(self, gt_id, lte_id):
-        return db[self.collection_name].find(  {
-                                                    '$and':[
-                                                        {'_id':{ '$gt':gt_id }}, 
-                                                        {'_id':{ '$lte':lte_id }},
-                                                    ]
-                                                }, sort=[('_id', 1)] )
+    def find_next(self, consumer_name):
+        consumed_by = 'consumedBy.%s' % consumer_name
+        return db[self.collection_name].find_and_modify(
+                                            query={
+                                                consumed_by:{'$ne':True}
+                                            }
+                                            , update={
+                                                '$set':{consumed_by:True}
+                                            }
+                                            , upsert=False
+                                            , new=False
+                                            , sort=[('_id',1)]
+            )
 
 
 class ConsumerManager(PkgExplorer):
@@ -133,61 +135,35 @@ class ConsumerBase(ConsumerManager):
     def __init__(self, pkg_name, collection_name):
         ConsumerManager.__init__(self, pkg_name, collection_name)
 
-    def consume(self, event_instance, event_cursor):
-        #print '\n'
-        #print '[Consumer][%s] %d %s...' % (self.collection_name, event_cursor.count(), event_instance.collection_name)
-        for event_dict in event_cursor:
-            print '[Consumer][%s]: %s' % (self.collection_name, str(event_dict['msg'])) 
-
-    def find_one(self):
-        ''' humble attempt at the beginning of a thread or multi process safe archetecture, not too worried about the queries, we always search for an _id '''
-        return db[CONSUMER_COLLECTION_NAME].find_and_modify(    query={ '_id':self.collection_name }
-                                                                , update= {
-                                                                    '$set':{'consumeStartedAt': datetime.now()}
-                                                                }
-                                                                , new=True
-                                                                , upsert=True
-                                                            )
-        
-    def update(self, data):
-        db[CONSUMER_COLLECTION_NAME].update({'_id':self.collection_name}, { '$set':data })
+    def consume(self, event_instance, event_data):
+        print '[Consumer][%s][%s #%d]: %s' % (self.collection_name, event_instance.collection_name, event_data['_id'], str(event_data['msg'])) 
 
 
 def register_events(event_consumers):
     g_event_consumers.extend( event_consumers )
 
 
-def consume_events(verbose=True):
-    ''' 
-        to be run in another process, hopefully another pyhsical machine 
-        tip, to test, run in a while loop in a second terminal or run consume_events_debug_thread
-    '''
+def consume_events():
+    ''' to be run in another process, hopefully another pyhsical machine '''
     for event_consumer in g_event_consumers:
         event_instance = event_consumer[0]
         consumer = event_consumer[1]
-        frequency = event_consumer[2] if len(event_consumer) > 2 else 0
-        consumer_data = consumer.find_one()
-        if consumer_data is not None:
-            #fun stuff to do here, save consumeStaredAt under your machine name and processid 
-            #check for other machines that have this process open
-            #if any other machines have had this open for a long time, mark it for investigation, ping machine in charge
-            latest_event = event_instance.find_one()
-            last_consumed_id = consumer_data.get('lastConsumedEventId', 0)
-            if latest_event is not None and latest_event['_id'] > last_consumed_id:
-                cursor = event_instance.find_range(last_consumed_id, latest_event['_id'])
-                #if we ever go concurrrent we will need a try catch, help us all
-                consumer.consume(event_instance, cursor)
-                last_consumed_id = latest_event['_id']
-            consumer.update(
-                    {
-                        'consumeCompletedAt': datetime.now()
-                        , 'lastConsumedEventId': last_consumed_id
-                    }
-                )
+        next_event = event_instance.find_next(consumer.collection_name)
+        if next_event is not None:
+            consumer.consume(event_instance, next_event)
 
 
-def consume_events_debug_thread(verbose=True):
-    ''' implementation:
+def consume_events_loop(sleep_amount=.1):
+    ''' consumes events until something bad happens '''
+    from time import sleep
+    while(True):
+        consume_events()
+        sleep(sleep_amount)
+
+
+def consume_events_debug_thread():
+    ''' consumes events in a back ground thread
+    implementation:
     import pymonster
     thread_stopper = pymonster.consume_events_debug_thread()
     thread_stopper.set() #to stop thread
