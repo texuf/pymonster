@@ -15,7 +15,7 @@ setup(
       license='MIT',
       author='Austin Ellis',
       author_email='austinellis@gmail.com',
-      py_modules=[],
+      py_modules=['pymonster'],
       install_requires=[],
       scripts=[],
       namespace_packages=[]
