@@ -14,7 +14,7 @@ PyMonster is a flexible python event logging and consuming library. It is an imp
 ##Example
 
 ###Setup (shell commands)
-These commands make a directory called pymonster-test, setup a virtual python environment via virtualenv, and install the necessary dependancies, and open a python terminal
+These commands make a directory called pymonster-test, setup a virtual python environment via virtualenv, and install the necessary dependancies, and open a 
 
     mkdir pymonster-test
     cd pymonster-test
@@ -56,7 +56,7 @@ And, if you take a peek in the mongo shell you will see these events in separate
 
 ###Custom Events
 
-When we created our events object, we used the __pkg_name="pymonster.example.events"__ in this folder is a file called **custom\_1** which contains an Event class with a custom log message. 
+When we created our events object, we used the __pkg_name="pymonster.example.events"__ in this folder is a file called **custom\_1.py** which contains an Event class with a custom log message. 
 
     #source from: /pymonster/example/events/custom_1.py
     from pymonster import EventBase
@@ -99,11 +99,22 @@ Using custom events you can add parameters to the log call, assert that the para
         )
     pymonster.consume_events_loop() 
 
-Now, in the original terminal, fire off some events and watch them get consumed
+Just like events, theres a file in examples/consumers called **custom_1.py** shown below. By default, the consumer manager will create a BaseConsumer instance that will print out your message.
+ 
+    #source from: /pymonster/example/consumers/custom_1.py
+    from pymonster import ConsumerBase
+
+    class Consumer(ConsumerBase):
+        def consume(self, event_instance, event_data):
+            print '[CustomConsumer][%s][%s #%d]: %s' % (self.collection_name, event_instance.collection_name, event_data['_id'], str(event_data['msg'])) 
+
+In the original terminal, fire off some events and watch them get consumed
     
     for i in range(20):
         events.event_1.log('Logging event_1 %d' % i)
         events.custom_1.log('Logging custom event %d' % i)
+
+
 
 ###Other things
 
