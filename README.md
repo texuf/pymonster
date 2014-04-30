@@ -14,7 +14,7 @@ PyMonster is a flexible python event logging and consuming library. It is an imp
 ##Example
 
 ###Setup (shell commands)
-These commands make a directory called pymonster-test, setup a virtual python environment via virtualenv, and install the necessary dependancies, and open a 
+These commands make a directory called pymonster-test, setup a virtual python environment via virtualenv, and install the necessary dependancies, and open a python terminal
 
     mkdir pymonster-test
     cd pymonster-test
