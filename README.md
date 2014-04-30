@@ -86,6 +86,15 @@ Using custom events you can add parameters to the log call, assert that the para
     $ python
 
     import pymonster
+
+    #set verbosity for the demo
+    pymonster.verbose = True
+
+    #initialize your db
+    db_uri = os.environ.get('MONGO_URI', 'mongodb://localhost')
+    db_name = os.environ.get('MONGO_DB', 'pymonster-test')
+    pymonster.db = mongo.MongoClient(db_uri)[db_name]
+
     events = pymonster.EventManager(
             pkg_name='pymonster.example.events'
         )
