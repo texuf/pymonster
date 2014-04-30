@@ -4,16 +4,20 @@ from datetime import datetime
 #Event Example:
 from pymonster import EventBase
 class Event(EventBase):
-    def log(self, param1, param2):
-        assert isinstance(param1, unicode), 'param1 must be unicode'
-        EventBase.log(self, {'param1':param1, 'param2':param2})
+    def log(self, msg):
+        print '[CustomEventLogger][%s] %s' % (self.collection_name,msg)
+        EventBase.log(self, msg)
 
 #Consumer Example
 from pymonster import ConsumerBase
 class Consumer(ConsumerBase):
     def consume(self, event_instance, event_data):
-        print '[Custom Consumer :)][%s]: %s' % (self.collection_name, str(event_data['msg'])) 
+        print '[CustomConsumer][%s][%s #%d]: %s' % (self.collection_name, event_instance.collection_name, event_data['_id'], str(event_data['msg'])) 
 '''
+
+
+verbose = False
+allow_undeclared_events = True
 
 #constants
 COUNTER_COLLECTION_NAME = 'event_counters'
@@ -24,14 +28,13 @@ EVENT_COLLECTION_NAME_BASE = 'events'
 EVENT_CUSTOM_CLASS_NAME = 'Event'
 #globals
 g_event_consumers = []
-verbose = False
 
 class dbwrapper():
     ''' simple wrapper for throwing errors if the db isn't set up '''
     def __init__(self, value=None):
         self.__db = value
     def _assert_db(self):
-        assert pymongo.db is not None, 'Initialize db by setting pymonster.db = (your MongoClient instance)'
+        assert self.__db is not None, 'Initialize pymonster db by setting pymonster.db = (your MongoClient instance)'
     def __set__(self, obj, value):
         self.__db  = value
         self.__getattr__ = self.__db.__getattr__
@@ -75,6 +78,8 @@ class PkgExplorer(object):
             try:
                 module_module = __import__(new_pkg_name, fromlist='dummy')
             except ImportError as e:
+                if not allow_undeclared_events:
+                    raise ImportError('No module named %s' % new_pkg_name)
                 b = new_pkg_name.split('.')
                 possible_pkgs = ['.'.join(b[i:len(b)]) for i in range(1, len(b))]
                 known_error_msg = 'No module named '
@@ -90,7 +95,10 @@ class PkgExplorer(object):
 
 class EventManager(PkgExplorer):
     ''' instanciate to interact with events '''
-    def __init__(self, pkg_name, collection_name_base=EVENT_COLLECTION_NAME_BASE):
+    def __init__(   self
+                    , pkg_name
+                    , collection_name_base = EVENT_COLLECTION_NAME_BASE
+                ):
         PkgExplorer.__init__(self, pkg_name, collection_name_base, EVENT_CUSTOM_CLASS_NAME, EventBase)
 
 
@@ -126,7 +134,10 @@ class EventBase(EventManager):
 
 class ConsumerManager(PkgExplorer):
     ''' object for keeping track of event/consumer state '''
-    def __init__(self, pkg_name, collection_name_base=CONSUMER_ID_BASE):
+    def __init__(   self
+                    , pkg_name
+                    , collection_name_base = CONSUMER_ID_BASE
+                ):
         PkgExplorer.__init__(self, pkg_name, collection_name_base, CONSUMER_CUSTOM_CLASS_NAME, ConsumerBase)
 
 
