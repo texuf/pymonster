@@ -77,7 +77,7 @@ You will see this output:
 
 Using custom events you can add parameters to the log call, assert that the parameters are of the correct type, and manipulate data before logging
 
-###Consuming events
+###Consumers
 
  In another terminal (or several terminals) run the following, 
  
@@ -86,6 +86,10 @@ Using custom events you can add parameters to the log call, assert that the para
     $ python
 
     import pymonster
+    events = pymonster.EventManager(
+            pkg_name='pymonster.example.events'
+        )
+
     consumers = pymonster.ConsumerManager(
           pkg_name='pymonster.example.consumers'
         )
@@ -122,6 +126,11 @@ If you're worried about getting bitten by undeclared events and consumers, just 
 
     pymonster.allow_undeclared_events = False
 
+You can process events in a background thread in the same terminal like this
+
+    pymonster.consume_events_debug_thread()
+
+Or write your own loop that constantly calls
 
 Email me with any feedback at austinellis@gmail.com and check out [www.mighytspring.com](https://www.mightyspring.com/getstarted)!
 
