@@ -85,7 +85,11 @@ Using custom events you can add parameters to the log call, assert that the para
     $ source venv/bin/activate
     $ python
 
+    import os
     import pymonster
+    import pymongo as mongo
+    #import mongomock as mongo #use this if you want to use mongomock instead of a running mongo instance
+
 
     #set verbosity for the demo
     pymonster.verbose = True
