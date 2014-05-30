@@ -14,7 +14,7 @@ PyMonster is a flexible python event logging and consuming library. It is an imp
 ##Example
 
 ###Setup (shell commands)
-These commands make a directory called pymonster-test, setup a virtual python environment via virtualenv, and install the necessary dependancies, and open a 
+These commands make a directory called pymonster-test, setup a virtual python environment via virtualenv, and install the necessary dependancies, and open a python terminal.
 
     mkdir pymonster-test
     cd pymonster-test
@@ -134,6 +134,16 @@ In the original terminal, fire off some events and watch them get consumed
 
 
 ###Other things
+Events and Consumers don't have to have a 1 to 1 mapping, and you can create more consumers later that will run over all of your events
+
+    pymonster.register_events(
+            [
+                [events.event_1,                        consumers.my_metrics_counter]
+                , [events.event_1,                        consumers.my_machine_learning_process]
+                , [events.event_1,                        consumers.email_admins]
+            ]
+        )
+
 
 If you're worried about getting bitten by undeclared events and consumers, just turn that feature off
 
