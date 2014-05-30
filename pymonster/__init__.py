@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 
 '''
 #Event Example:
@@ -46,6 +46,10 @@ class dbwrapper():
         return self.__db.__getitem__(name)
 db = dbwrapper()
 
+def default_logger(msg):
+    print msg
+
+logger = default_logger
 
 class counter():
     @staticmethod
@@ -62,7 +66,7 @@ class counter():
 
 class PkgExplorer(object):
     ''' finds your packages by dot notation, instanciates instance of target_class_name and returns it. target class should inherit from PkgExplorer '''
-    def __init__(self, pkg_name, collection_name, target_class_name, target_base_class):
+    def __init__(self, pkg_name, collection_name, target_class_name, target_base_class, allow_undeclared_modules=False):
         assert pkg_name is not None, 'Specifiy a package as a source of your events'
         assert collection_name is not None, 'Specifiy a base name for your event collectinos, i.e. "events" or "consumer"'
         self.collection_name = collection_name
@@ -70,6 +74,7 @@ class PkgExplorer(object):
         self.target_class_name = target_class_name
         self.target_base_class = target_base_class
         self.cache = {}
+        self.allow_undeclared_modules = allow_undeclared_modules
 
     def __getattr__(self, name):
         if name not in self.cache:
@@ -78,8 +83,11 @@ class PkgExplorer(object):
             try:
                 module_module = __import__(new_pkg_name, fromlist='dummy')
             except ImportError as e:
-                if not allow_undeclared_events:
-                    raise ImportError('No module named %s' % new_pkg_name)
+                if not self.allow_undeclared_modules or not allow_undeclared_events:
+                    if name in str(e):
+                        raise ImportError('No module named %s, declare an event or create a proper module...' % new_pkg_name)
+                    else:
+                        raise
                 b = new_pkg_name.split('.')
                 possible_pkgs = ['.'.join(b[i:len(b)]) for i in range(1, len(b))]
                 known_error_msg = 'No module named '
@@ -99,7 +107,7 @@ class EventManager(PkgExplorer):
                     , pkg_name
                     , collection_name_base = EVENT_COLLECTION_NAME_BASE
                 ):
-        PkgExplorer.__init__(self, pkg_name, collection_name_base, EVENT_CUSTOM_CLASS_NAME, EventBase)
+        PkgExplorer.__init__(self, pkg_name, collection_name_base, EVENT_CUSTOM_CLASS_NAME, EventBase, allow_undeclared_modules=True)
 
 
 class EventBase(EventManager):
@@ -108,7 +116,7 @@ class EventBase(EventManager):
         EventManager.__init__(self, pkg_name, collection_name)
 
     def log(self, msg):
-        if verbose: print '[Event][%s] %s' % (self.collection_name,msg)
+        if verbose: logger( '[Event][%s] %s' % (self.collection_name,msg) )
         db[self.collection_name].insert(
                 {
                     '_id':counter.get_next(self.collection_name)
@@ -117,7 +125,10 @@ class EventBase(EventManager):
                     , 'consumedBy':{}
                 }
             )
-    def find_next(self, consumer_name):
+    def count(self):
+        return db[self.collection_name].count()
+
+    def get_next(self, consumer_name):
         consumed_by = 'consumedBy.%s' % consumer_name
         return db[self.collection_name].find_and_modify(
                                             query={
@@ -138,7 +149,7 @@ class ConsumerManager(PkgExplorer):
                     , pkg_name
                     , collection_name_base = CONSUMER_ID_BASE
                 ):
-        PkgExplorer.__init__(self, pkg_name, collection_name_base, CONSUMER_CUSTOM_CLASS_NAME, ConsumerBase)
+        PkgExplorer.__init__(self, pkg_name, collection_name_base, CONSUMER_CUSTOM_CLASS_NAME, ConsumerBase, allow_undeclared_modules=False)
 
 
 class ConsumerBase(ConsumerManager):
@@ -147,11 +158,31 @@ class ConsumerBase(ConsumerManager):
         ConsumerManager.__init__(self, pkg_name, collection_name)
 
     def consume(self, event_instance, event_data):
-        print '[Consumer][%s][%s #%d]: %s' % (self.collection_name, event_instance.collection_name, event_data['_id'], str(event_data['msg'])) 
+        logger( '[Consumer][%s][%s #%d]: %s' % (self.collection_name, event_instance.collection_name, event_data['_id'], str(event_data['msg'])) )
 
 
 def register_events(event_consumers):
     g_event_consumers.extend( event_consumers )
+
+
+
+def consume_event(event_instance, consumer_name):
+    while(True):
+        event_data = event_instance.get_next(consumer_name)
+        if event_data is not None:
+            logger( 'consuming [%s][%s #%d]' % (consumer_name, event_instance.collection_name, event_data['_id']) )
+            yield event_data
+        else:
+            break
+
+def expire_consumer(event_instance, consumer, log_results=True):
+    while(True):
+        event_data = event_instance.get_next(consumer.collection_name)
+        if event_data is not None:
+            if log_results:
+                logger( 'Expiring [%s][%s #%d]' % (consumer.collection_name, event_instance.collection_name, event_data['_id']) )
+        else:
+            break
 
 
 def consume_events():
@@ -159,9 +190,22 @@ def consume_events():
     for event_consumer in g_event_consumers:
         event_instance = event_consumer[0]
         consumer = event_consumer[1]
-        next_event = event_instance.find_next(consumer.collection_name)
-        if next_event is not None:
-            consumer.consume(event_instance, next_event)
+        kwargs = event_consumer[2] if len(event_consumer) > 2 else None
+        start_time = datetime.now()
+        while( (datetime.now() - start_time) < timedelta(minutes=5) ):
+            event_data = event_instance.get_next(consumer.collection_name)
+            if event_data is not None:
+                logger( 'Consuming [%s][%s #%d]' % (consumer.collection_name, event_instance.collection_name, event_data['_id']) )
+                if kwargs is not None:
+                    consumer.consume(event_instance, event_data, **kwargs)
+                else:
+                    consumer.consume(event_instance, event_data)
+            else:
+                break
+        #some logging to know if we're not processing things
+        if event_data is not None:
+            logger('failed to exhaust consumer [%s]' % consumer.collection_name)
+
 
 
 def consume_events_loop(sleep_amount=.1):
@@ -171,6 +215,7 @@ def consume_events_loop(sleep_amount=.1):
         consume_events()
         sleep(sleep_amount)
 
+from threading import Thread, Event
 
 def consume_events_debug_thread():
     ''' consumes events in a back ground thread
@@ -179,7 +224,6 @@ def consume_events_debug_thread():
     thread_stopper = pymonster.consume_events_debug_thread()
     thread_stopper.set() #to stop thread
     '''
-    from threading import Thread, Event
     import time
     thread_stopper = Event()
     def _internal_consume_events(n, thread_stopper):
@@ -190,7 +234,6 @@ def consume_events_debug_thread():
     t = Thread(target=_internal_consume_events, args=(1,thread_stopper))
     t.start()
     return thread_stopper
-
 
 
 
